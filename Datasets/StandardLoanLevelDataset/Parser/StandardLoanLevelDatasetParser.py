@@ -57,8 +57,3 @@ class StandardLoanLevelDatasetParser:
         issuance.columns = self._issuance_cols
         self.data.join(issuance.set_index('loan'))
 
-
-if __name__ == "__main__":
-    sll_data_parser = StandardLoanLevelDatasetParser(max_rows_per_quarter=500)
-    sll_data_parser.load()
-    print(sll_data_parser.data)
