@@ -56,9 +56,9 @@ class StandardLoanLevelDatasetParser:
             'harp_indicator': 'S', 'property_valuation_method': 'int64', 'io_indicator': 'S',
             # Performance data types
             'report_month': 'int64', 'current_UPB': 'float64', 'current_loan_dlqc_status': 'S', 'loan_age': 'int64',
-            'months_to_maturity': 'int64', 'repurchase': 'S', 'modification': 'S', 'zero_balance_code': 'int64',
-            'zero_balance_date': 'int64', 'current_interest_rate': 'float64', 'current_deffered_UPB': 'int64',
-            'DDLPI': 'int64', 'MI_recoveries': 'float64', 'net_sales_proceeds': 'S', 'non_MI_recoveries': 'float64',
+            'months_to_maturity': 'int64', 'repurchase': 'S', 'modification': 'S', 'zero_balance_code': 'float64',
+            'zero_balance_date': 'float64', 'current_interest_rate': 'float64', 'current_deffered_UPB': 'S',
+            'DDLPI': 'float64', 'MI_recoveries': 'float64', 'net_sales_proceeds': 'float64', 'non_MI_recoveries': 'float64',
             'expenses': 'float64', 'legal_costs': 'float64', 'maintenance_costs': 'float64',
             'taxes_and_insurence': 'float64', 'miscellaneous_expenses': 'float64', 'actual_loss': 'float64',
             'modification_cost': 'float64', 'step_modification': 'S', 'deferred_payment_plan': 'S',
@@ -108,7 +108,7 @@ class StandardLoanLevelDatasetParser:
                 if self.rows_to_sample:
                     issuance = issuance.sample(self.rows_to_sample, random_state=self.seed)
 
-                performance = pd.read_csv(performance_path, delimiter='|', names=self._performance_cols, nrows=self.max_rows_per_quarter)
+                performance = pd.read_csv(performance_path, delimiter='|', names=self._performance_cols, dtype=self.data_types, nrows=self.max_rows_per_quarter)
                 performance = performance.loc[performance['loan_sequence_number'].isin(set(issuance['loan_sequence_number']))]
 
                 full_data = performance.join(issuance.set_index('loan_sequence_number'), on='loan_sequence_number')
@@ -150,15 +150,35 @@ class StandardLoanLevelDatasetParser:
         self.data['MSA'] = self.data['MSA'].apply(lambda x: 999 if math.isnan(x) else x)
         self.data['number_of_units'] = self.data['number_of_units'].apply(lambda x: 99 if x == '.' else int(x))
         self.data['harp_indicator'] = self.data['harp_indicator'].apply(lambda x: 0 if x != 'Y' else 1)
+        self.data['first_time_homebuyer_flag'] = self.data['first_time_homebuyer_flag'].apply(lambda x: 0 if x == 'N' else 1)
+        self.data['program_indicator'] = self.data['program_indicator'].apply(lambda x: 0 if x == 9 else 1)
+        self.data['PPM'] = self.data['PPM'].apply(lambda x: 0 if x == 'N' else 1)
+        self.data['super_conforming'] = self.data['super_conforming'].apply(lambda x: 1 if x == 'Y' else 0)
+        self.data['pre-harp_sequence_number'] = self.data['pre-harp_sequence_number'].apply(lambda x: "" if pd.isna(x) else x)
+
         self.data['modification'] = self.data['modification'].apply(lambda x: 0 if x != 'Y' else 1)
         self.data['step_modification'] = self.data['step_modification'].apply(lambda x: 0 if x != 'Y' else 1)
         self.data['deferred_payment_plan'] = self.data['deferred_payment_plan'].apply(lambda x: 0 if x != 'Y' else 1)
         self.data['borrower_assistance_status'] = self.data['borrower_assistance_status'].apply(lambda x: 0 if x not in ['F', 'R', 'T'] else 1)
-        self.data['first_time_homebuyer_flag'] = self.data['first_time_homebuyer_flag'].apply(lambda x: 0 if x == 'N' else 1)
-        self.data['program_indicator'] = self.data['program_indicator'].apply(lambda x: 0 if x == 9 else 1)
-        self.data['current_deffered_UPB'] = self.data['current_deffered_UPB'].apply(lambda x: 0.0 if x == '.' else x)
+        self.data['current_deffered_UPB'] = self.data['current_deffered_UPB'].apply(lambda x: 0.0 if x == '.' else float(x))
         self.data['zero_balance_code'] = self.data['zero_balance_code'].apply(lambda x: 1 if x == 1 else 0)
-        self.data['PPM'] = self.data['PPM'].apply(lambda x: 0 if x == 'N' else 1)
+        self.data['zero_balance_date'] = self.data['zero_balance_date'].apply(lambda x: 1 if pd.isna(x) else int(x))
+        self.data['DDLPI'] = self.data['DDLPI'].apply(lambda x: 1 if pd.isna(x) else int(x))
+        self.data['repurchase'] = self.data['repurchase'].apply(lambda x: 1 if x == 'Y' else 0)
+        self.data['MI_recoveries'] = self.data['MI_recoveries'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['net_sales_proceeds'] = self.data['net_sales_proceeds'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['non_MI_recoveries'] = self.data['non_MI_recoveries'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['expenses'] = self.data['expenses'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['legal_costs'] = self.data['legal_costs'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['maintenance_costs'] = self.data['maintenance_costs'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['taxes_and_insurence'] = self.data['taxes_and_insurence'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['miscellaneous_expenses'] = self.data['miscellaneous_expenses'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['actual_loss'] = self.data['actual_loss'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['modification_cost'] = self.data['modification_cost'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['estimated_LTV'] = self.data['estimated_LTV'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['zero_balance_removal_UPB'] = self.data['zero_balance_removal_UPB'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['dlq_accrued_interest'] = self.data['dlq_accrued_interest'].apply(lambda x: 0.0 if pd.isna(x) else x)
+        self.data['dlqc_due_to_disaster'] = self.data['dlqc_due_to_disaster'].apply(lambda x: 1 if x == 'Y' else 0)
         self.data['month'] = self.data['report_month'] % 100
 
         self.data = self.data[self.data.hpa.isnull() == False]
