@@ -1,35 +1,77 @@
 import os
+import math
 import pandas as pd
+
+from Definitions import ROOT_DIR
 
 
 class StandardLoanLevelDatasetParser:
-    _issuance_string = "historical_data"
-    _performance_string = _issuance_string + "_time"
-    _issuance_cols = [
-        'credit_score', 'first_payment_date', 'first_time_homebuyer_flag', 'maturity_date', 'MSA', 'MI_%',
-        'number_of_units', 'occupancy_status', 'orig_CLTV', 'orig_DTI', 'orig_UPB', 'orig_LTV', 'orig_interest_rate',
-        'channel', 'PPM', 'amortization_type', 'property_state', 'property_type', 'postal_code', 'loan_sequence_number',
-        'loan_purpose', 'orig_loan_term', 'number_of_borrowers', 'seller_name', 'servicer_name', 'super_conforming',
-        'pre-harp_sequence_number', 'program_indicator', 'harp_indicator', 'property_valuation_method', 'io_indicator'
-    ]
-    _performance_cols = [
-        'loan_sequence_number', 'report_month', 'current_UPB', 'current_loan_dlqc_status', 'loan_age',
-        'months_to_maturity', 'repurchase', 'modification', 'zero_balance_code', 'zero_balance_date',
-        'current_interest_rate', 'current_deffered_UPB', 'DDLPI', 'MI_recoveries', 'net_sales_proceeds',
-        'non_MI_recoveries', 'expenses', 'legal_costs', 'maintenance_costs', 'taxes_and_insurence',
-        'miscellaneous_expenses', 'actual_loss', 'modification_cost', 'step_modification', 'deferred_payment_plan',
-        'estimated_LTV', 'zero_balance_removal_UPB', 'dlq_accrued_interest', 'dlqc_due_to_disaster',
-        'borrower_assistance_status'
-    ]
 
-    def __init__(self, path="Datasets/StandardLoanLevelDataset/Data", max_rows_per_quarter=999999999999):
-        self.path = path
+    def __init__(self, max_rows_per_quarter=None, rows_to_sample=None, dump_to_csv=None, seed=None):
+        self.sll_dataset_dir = os.path.join(ROOT_DIR, "Datasets/StandardLoanLevelDataset/Data")
+        self._issuance_cols = [
+            'credit_score', 'first_payment_date', 'first_time_homebuyer_flag', 'maturity_date', 'MSA', 'MI_%',
+            'number_of_units', 'occupancy_status', 'orig_CLTV', 'orig_DTI', 'orig_UPB', 'orig_LTV',
+            'orig_interest_rate', 'channel', 'PPM', 'amortization_type', 'property_state', 'property_type',
+            'postal_code', 'loan_sequence_number', 'loan_purpose', 'orig_loan_term', 'number_of_borrowers',
+            'seller_name', 'servicer_name', 'super_conforming', 'pre-harp_sequence_number', 'program_indicator',
+            'harp_indicator', 'property_valuation_method', 'io_indicator'
+        ]
+        self._issuance_string = "historical_data"
+
+        self._performance_cols = [
+            'loan_sequence_number', 'report_month', 'current_UPB', 'current_loan_dlqc_status', 'loan_age',
+            'months_to_maturity', 'repurchase', 'modification', 'zero_balance_code', 'zero_balance_date',
+            'current_interest_rate', 'current_deffered_UPB', 'DDLPI', 'MI_recoveries', 'net_sales_proceeds',
+            'non_MI_recoveries', 'expenses', 'legal_costs', 'maintenance_costs', 'taxes_and_insurence',
+            'miscellaneous_expenses', 'actual_loss', 'modification_cost', 'step_modification', 'deferred_payment_plan',
+            'estimated_LTV', 'zero_balance_removal_UPB', 'dlq_accrued_interest', 'dlqc_due_to_disaster',
+            'borrower_assistance_status'
+        ]
+        self._performance_string = self._issuance_string + "_time"
+
+        self.us_hpa_path = os.path.join(ROOT_DIR, "Datasets/MacroData/US_HPA.csv")
+        self.us_hpa_cols = ['state', 'year', 'quarter', 'hpi']
+
+        self.state_hpa_path = os.path.join(ROOT_DIR, "Datasets/MacroData/state_HPA.csv")
+        self.state_hpa_cols = ['state', 'year', 'quarter', 'hpi']
+
+        self.mtg_rate_path = os.path.join(ROOT_DIR, "Datasets/MacroData/mortgage_rate.csv")
+        self.mtg_rate_cols = ['mtgrate', 'date']
+
+        self.unemployment_rate_path = os.path.join(ROOT_DIR, "Datasets/MacroData/unemployment_rate.csv")
+        self.unemployment_rate_cols = ['unemployment', 'date']
+
+        self.data_types = {
+            'loan_sequence_number': 'S', 'report_month': 'int64', 'credit_score': 'int64',
+            'first_payment_date': 'int64', 'first_time_homebuyer_flag': 'int64', 'MSA': 'int64', 'MI_%': 'int64',
+            'number_of_units': 'int64', 'occupancy_status': 'S', 'orig_CLTV': 'int64', 'orig_DTI': 'int64',
+            'orig_UPB': 'int64', 'orig_LTV': 'int64', 'orig_interest_rate': 'float64', 'PPM': 'int64',
+            'property_state': 'S', 'loan_purpose': 'S', 'number_of_borrowers': 'int64', 'program_indicator': 'int64',
+            'harp_indicator': 'int64', 'current_UPB': 'float64', 'loan_age': 'int64', 'months_to_maturity': 'int64',
+            'modification': 'int64', 'current_interest_rate': 'float64', 'current_deffered_UPB': 'float64',
+            'step_modification': 'int64', 'deferred_payment_plan': 'int64', 'borrower_assistance_status': 'int64',
+            'hpa': 'float64', 'mtgrate': 'float64', 'unemployment': 'float64', 'month': 'int64'
+        }
+
+        self.categorical_cols = ['occupancy_status', 'property_state', 'loan_purpose', 'month']
+        self.numerical_cols = [
+            'credit_score', 'first_time_homebuyer_flag', 'MI_%', 'number_of_units', 'orig_CLTV', 'orig_DTI', 'orig_UPB',
+            'orig_LTV', 'orig_interest_rate', 'PPM', 'number_of_borrowers', 'program_indicator', 'harp_indicator',
+            'current_UPB', 'loan_age', 'months_to_maturity', 'modification', 'current_interest_rate',
+            'current_deffered_UPB', 'step_modification', 'deferred_payment_plan', 'borrower_assistance_status', 'hpa',
+            'mtgrate', 'unemployment', 'zero_balance_code'
+        ]
+
         self.max_rows_per_quarter = max_rows_per_quarter
         self.data = pd.DataFrame()
+        self.seed = seed
+        self.rows_to_sample = rows_to_sample
+        self.dump_to_csv = dump_to_csv
 
     def load(self):
-        print(f"Loading Standard Loan-Level Dataset at path {self.path}")
-        for root, dirs, _ in os.walk(self.path):
+        print(f"Loading Standard Loan-Level Dataset at path {self.sll_dataset_dir}")
+        for root, dirs, _ in os.walk(self.sll_dataset_dir):
             for dir_name in dirs:
                 if "historical_data_" not in dir_name or "Q" not in dir_name:
                     continue
@@ -43,14 +85,74 @@ class StandardLoanLevelDatasetParser:
                 issuance_path = os.path.join(dir_path, self._issuance_string + "_" + year + quarter + ".txt")
                 performance_path = os.path.join(dir_path, self._performance_string + "_" + year + quarter + ".txt")
 
-                issuance = pd.read_csv(issuance_path, delimiter='|', header=None, nrows=self.max_rows_per_quarter)
-                issuance.columns = self._issuance_cols
+                issuance = pd.read_csv(issuance_path, delimiter='|', names=self._issuance_cols, dtype=self.data_types, nrows=self.max_rows_per_quarter)
+                issuance = issuance[issuance.eval("amortization_type=='FRM' & property_type=='SF' & orig_loan_term==360 & io_indicator=='N'")]
+                if self.rows_to_sample:
+                    issuance = issuance.sample(self.rows_to_sample, random_state=self.seed)
+
                 performance = pd.read_csv(performance_path, delimiter='|', header=None, nrows=self.max_rows_per_quarter)
                 performance.columns = self._performance_cols
+                performance = performance.loc[performance['loan_sequence_number'].isin(set(issuance['loan_sequence_number']))]
+
                 full_data = performance.join(issuance.set_index('loan_sequence_number'), on='loan_sequence_number')
                 full_data['year'] = int(year)
                 full_data['quarter'] = int(quarter[1])
+                full_data['report_year'] = full_data['report_month'] // 100
+                full_data['report_quarter'] = full_data['report_month'] % 100 // 4 + 1
                 self.data = self.data.append(full_data)
+
+        us_hpa = pd.read_csv(self.us_hpa_path, header=None)
+        us_hpa.columns = self.us_hpa_cols
+        us_hpa = us_hpa[us_hpa.state == 'USA']
+        us_hpa['hpa'] = ((us_hpa.hpi / us_hpa.hpi.shift(1)) ** 4 - 1) * 100
+        us_hpa['state'] = 'PR'
+
+        state_hpa = pd.read_csv(self.state_hpa_path, header=None)
+        state_hpa.columns = self.state_hpa_cols
+        state_hpa['hpa'] = ((state_hpa.hpi / state_hpa.hpi.shift(1)) ** 4 - 1) * 100
+
+        hpa = pd.concat([state_hpa, us_hpa])
+        self.data = self.data.join(hpa.set_index(['state', 'year', 'quarter']), on=['property_state', 'report_year', 'report_quarter'])
+
+        mtg_rate = pd.read_csv(self.mtg_rate_path, header=8)
+        mtg_rate['yearmon'] = pd.DatetimeIndex(mtg_rate.date).year * 100 + pd.DatetimeIndex(mtg_rate.date).month
+        mtg_rate = mtg_rate.drop(columns='date')
+        mtg_rate.columns = self.mtg_rate_cols
+        self.data = self.data.join(mtg_rate.set_index('date'), on='report_month')
+
+        unemp = pd.read_csv(self.unemployment_rate_path, delimiter='\t')
+        unemp['date'] = unemp.Year * 100 + unemp.Period.str.slice(1, 3).astype(int)
+        unemp = unemp.drop(columns=['Series ID', 'Year', 'Period'])
+        unemp.columns = self.unemployment_rate_cols
+        self.data = self.data.join(unemp.set_index('date'), on='report_month')
+
+        self._clean()
+
+        if self.dump_to_csv:
+            self.data.to_csv(self.dump_to_csv, index=False)
+
+    def _clean(self):
+        self.data['MSA'] = self.data['MSA'].apply(lambda x: 99999 if math.isnan(x) else x)
+        self.data['number_of_units'] = self.data['number_of_units'].apply(lambda x: 99999 if x == '.' else x)
+        self.data['harp_indicator'] = self.data['harp_indicator'].apply(lambda x: 0 if x != 'Y' else 1)
+        self.data['modification'] = self.data['modification'].apply(lambda x: 0 if x != 'Y' else 1)
+        self.data['step_modification'] = self.data['step_modification'].apply(lambda x: 0 if x != 'Y' else 1)
+        self.data['deferred_payment_plan'] = self.data['deferred_payment_plan'].apply(lambda x: 0 if x != 'Y' else 1)
+        self.data['borrower_assistance_status'] = self.data['borrower_assistance_status'].apply(lambda x: 0 if x not in ['F', 'R', 'T'] else 1)
+        self.data['first_time_homebuyer_flag'] = self.data['first_time_homebuyer_flag'].apply(lambda x: 0 if x == 'N' else 1)
+        self.data['program_indicator'] = self.data['program_indicator'].apply(lambda x: 0 if x == 9 else 1)
+        self.data['current_deffered_UPB'] = self.data['current_deffered_UPB'].apply(lambda x: 0.0 if x == '.' else x)
+        self.data['zero_balance_code'] = self.data['zero_balance_code'].apply(lambda x: 1 if x == 1 else 0)
+        self.data['PPM'] = self.data['PPM'].apply(lambda x: 0 if x == 'N' else 1)
+        self.data['month'] = self.data['report_month'] % 100
+
+        self.data = self.data.astype(self.data_types)
+        self.data = self.data[self.data.hpa.isnull() == False]
+
+    def get_dataset(self):
+        self.data[self.categorical_cols] = self.data[self.categorical_cols].astype('category')
+        df_dummy = pd.get_dummies(self.data[self.categorical_cols])
+        return pd.concat([self.data[self.numerical_cols], df_dummy], axis=1)
 
     def _load_issuance_data(self, file_path):
         issuance = pd.read_csv(file_path, delimiter='|', header=None)
