@@ -130,3 +130,4 @@ dmypy.json
 
 # ----- USER ADDED -----
 .idea/
+.DS_Store
