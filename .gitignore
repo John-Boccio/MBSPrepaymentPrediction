@@ -131,3 +131,4 @@ dmypy.json
 # ----- USER ADDED -----
 .idea/
 .DS_Store
+Models/lightning_logs
