@@ -47,9 +47,9 @@ class StandardLoanLevelDatasetParser:
         self.data_types = {
             # Issuance data types
             'credit_score': 'int64', 'first_payment_date': 'int64', 'first_time_homebuyer_flag': 'S',
-            'maturity_date': 'int64', 'MSA': 'float64', 'MI_%': 'int64', 'number_of_units': 'S',
+            'maturity_date': 'int64', 'MSA': 'float64', 'MI_%': 'S', 'number_of_units': 'S',
             'occupancy_status': 'S', 'orig_CLTV': 'int64', 'orig_DTI': 'int64', 'orig_UPB': 'int64', 'orig_LTV': 'int64',
-            'orig_interest_rate': 'float64', 'channel': 'S', 'PPM': 'S', 'amortization_type': 'S',
+            'orig_interest_rate': 'S', 'channel': 'S', 'PPM': 'S', 'amortization_type': 'S',
             'property_state': 'S', 'property_type': 'S', 'postal_code': 'int64', 'loan_sequence_number': 'S',
             'loan_purpose': 'S', 'orig_loan_term': 'int64', 'number_of_borrowers': 'int64', 'seller_name': 'S',
             'servicer_name': 'S', 'super_conforming': 'S', 'pre-harp_sequence_number': 'S', 'program_indicator': 'S',
@@ -103,10 +103,10 @@ class StandardLoanLevelDatasetParser:
                 issuance_path = os.path.join(dir_path, self._issuance_string + "_" + year + quarter + ".txt")
                 performance_path = os.path.join(dir_path, self._performance_string + "_" + year + quarter + ".txt")
 
-                issuance = pd.read_csv(issuance_path, delimiter='|', names=self._issuance_cols, dtype=self.data_types, nrows=self.max_rows_per_quarter)
+                issuance = pd.read_csv(issuance_path, delimiter='|', names=self._issuance_cols, dtype=self.data_types, nrows=self.max_rows_per_quarter, error_bad_lines=False)
                 issuance = issuance[issuance.eval("amortization_type=='FRM' & property_type=='SF' & orig_loan_term==360 & io_indicator=='N'")]
                 if self.rows_to_sample:
-                    issuance = issuance.sample(self.rows_to_sample, random_state=self.seed)
+                    issuance = issuance.sample(min(self.rows_to_sample, len(issuance.index)), random_state=self.seed)
 
                 performance = pd.read_csv(performance_path, delimiter='|', names=self._performance_cols, dtype=self.data_types, nrows=self.max_rows_per_quarter)
                 performance = performance.loc[performance['loan_sequence_number'].isin(set(issuance['loan_sequence_number']))]
@@ -155,6 +155,8 @@ class StandardLoanLevelDatasetParser:
         self.data['PPM'] = self.data['PPM'].apply(lambda x: 0 if x == 'N' else 1)
         self.data['super_conforming'] = self.data['super_conforming'].apply(lambda x: 1 if x == 'Y' else 0)
         self.data['pre-harp_sequence_number'] = self.data['pre-harp_sequence_number'].apply(lambda x: "" if pd.isna(x) else x)
+        self.data['orig_interest_rate'] = self.data['orig_interest_rate'].apply(lambda x: 0.0 if x == '.' else float(x))
+        self.data['MI_%'] = self.data['MI_%'].apply(lambda x: 0 if x == '.' else int(x))
 
         self.data['modification'] = self.data['modification'].apply(lambda x: 0 if x != 'Y' else 1)
         self.data['step_modification'] = self.data['step_modification'].apply(lambda x: 0 if x != 'Y' else 1)
@@ -186,7 +188,8 @@ class StandardLoanLevelDatasetParser:
     def get_dataset(self):
         self.data[self.categorical_cols] = self.data[self.categorical_cols].astype('category')
         df_dummy = pd.get_dummies(self.data[self.categorical_cols])
-        return pd.concat([self.data[self.numerical_cols], df_dummy], axis=1)
+        df = pd.concat([self.data[self.numerical_cols], df_dummy], axis=1)
+        return df
 
     def _load_issuance_data(self, file_path):
         issuance = pd.read_csv(file_path, delimiter='|', header=None)
