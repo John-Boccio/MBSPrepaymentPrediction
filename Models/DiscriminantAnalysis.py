@@ -1,7 +1,7 @@
-import sklearn.metrics
-import sklearn.linear_model
+import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import RobustScaler
+import sklearn
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
 from Datasets.StandardLoanLevelDataset.Parser.StandardLoanLevelDatasetParser import StandardLoanLevelDatasetParser
 
@@ -21,22 +21,16 @@ val_x = val.drop(columns='zero_balance_code')
 test_y = test['zero_balance_code']
 test_x = test.drop(columns='zero_balance_code')
 
-normalize = 0
-if normalize:
-    train_x = RobustScaler().fit_transform(train_x)
-    val_x = RobustScaler().fit_transform(val_x)
-    test_x = RobustScaler().fit_transform(test_x)
+qda = QuadraticDiscriminantAnalysis()
+qda.fit(train_x, train_y)
 
-logreg = sklearn.linear_model.LogisticRegression(max_iter=10000, solver='liblinear')
-logreg.fit(train_x, train_y)
-score_train = logreg.score(train_x, train_y)
+score_train = qda.score(train_x, train_y)
 print(score_train)
-score_val = logreg.score(val_x, val_y)
+score_val = qda.score(val_x, val_y)
 print(score_val)
 
-predictions = logreg.predict(test_x)
-sklearn.metrics.plot_confusion_matrix(logreg, test_x, test_y, values_format='', cmap='Blues')
+predictions = qda.predict(test_x)
+sklearn.metrics.plot_confusion_matrix(qda, test_x, test_y, values_format='', cmap='Blues')
 plt.show()
 classification_report = sklearn.metrics.classification_report(test_y, predictions)
 print(classification_report)
-

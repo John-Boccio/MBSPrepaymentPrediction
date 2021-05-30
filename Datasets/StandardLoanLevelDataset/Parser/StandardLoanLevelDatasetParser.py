@@ -1,6 +1,10 @@
 import os
 import math
+
+import matplotlib.pyplot as plt
 import pandas as pd
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 from Definitions import ROOT_DIR
 
@@ -163,7 +167,7 @@ class StandardLoanLevelDatasetParser:
         self.data['deferred_payment_plan'] = self.data['deferred_payment_plan'].apply(lambda x: 0 if x != 'Y' else 1)
         self.data['borrower_assistance_status'] = self.data['borrower_assistance_status'].apply(lambda x: 0 if x not in ['F', 'R', 'T'] else 1)
         self.data['current_deffered_UPB'] = self.data['current_deffered_UPB'].apply(lambda x: 0.0 if x == '.' else float(x))
-        self.data['zero_balance_code'] = self.data['zero_balance_code'].apply(lambda x: 1 if x == 1 else 0)
+        self.data['zero_balance_code'] = self.data['zero_balance_code'].apply(lambda x: int(1) if x == 1 else int(0))
         self.data['zero_balance_date'] = self.data['zero_balance_date'].apply(lambda x: 1 if pd.isna(x) else int(x))
         self.data['DDLPI'] = self.data['DDLPI'].apply(lambda x: 1 if pd.isna(x) else int(x))
         self.data['repurchase'] = self.data['repurchase'].apply(lambda x: 1 if x == 'Y' else 0)
@@ -185,14 +189,67 @@ class StandardLoanLevelDatasetParser:
 
         self.data = self.data[self.data.hpa.isnull() == False]
 
-    def get_dataset(self):
+    def get_dataset(self, extra_cols=None):
         self.data[self.categorical_cols] = self.data[self.categorical_cols].astype('category')
         df_dummy = pd.get_dummies(self.data[self.categorical_cols])
         df = pd.concat([self.data[self.numerical_cols], df_dummy], axis=1)
+        if extra_cols is not None:
+            df = pd.concat([df, self.data[['report_month', 'zero_balance_removal_UPB']]], axis=1)
         return df
+
+    def get_cols(self, columns):
+        return pd.DataFrame(self.data[columns], columns=columns)
 
     def _load_issuance_data(self, file_path):
         issuance = pd.read_csv(file_path, delimiter='|', header=None)
         issuance.columns = self._issuance_cols
         self.data.join(issuance.set_index('loan'))
+
+
+if __name__ == '__main__':
+    # Visualize the dataset using PCA
+    n_components = 2
+    assert(n_components == 2 or n_components == 3)
+
+    pca = PCA(n_components=n_components)
+    sll_data_parser = StandardLoanLevelDatasetParser(max_rows_per_quarter=100000, rows_to_sample=50000)
+    sll_data_parser.load()
+    x = sll_data_parser.get_dataset()
+    y = x.pop('zero_balance_code')
+
+    x = StandardScaler().fit_transform(x)
+
+    cols = []
+    for i in range(n_components):
+        cols += ["PC " + str(i)]
+    pcs = pca.fit_transform(x)
+    pca_df = pd.concat([pd.DataFrame(pcs, columns=cols), y.reset_index()], axis=1)
+    pca_df = pca_df.groupby('zero_balance_code').sample(n=300)
+    print(pca_df)
+
+    fig = plt.figure(figsize=(8, 6))
+    if n_components == 3:
+        ax = fig.add_subplot(projection='3d')
+    else:
+        ax = fig.add_subplot()
+    labels = [0, 1]
+    label_names = ["No Prepayment", "Prepayment"]
+    colors = ['r', 'b']
+    ax.set_title("PCA with " + str(n_components) + " Components on Standard Loan-Level Dataset")
+    ax.set_xlabel('PC 0')
+    ax.set_ylabel('PC 1')
+    if n_components == 3:
+        ax.set_zlabel('PC 2')
+
+    for label, label_name, color in zip(labels, label_names, colors):
+        label_indices = pca_df['zero_balance_code'] == label
+        if n_components == 2:
+            ax.scatter(pca_df.loc[label_indices, 'PC 0'], pca_df.loc[label_indices, 'PC 1'], c=color)
+        else:
+            ax.scatter(pca_df.loc[label_indices, 'PC 0'], pca_df.loc[label_indices, 'PC 1'],
+                       pca_df.loc[label_indices, 'PC 2'], c=color)
+
+    ax.legend(label_names)
+    ax.grid()
+    plt.savefig('PCA_' + str(n_components) + '_components.png')
 

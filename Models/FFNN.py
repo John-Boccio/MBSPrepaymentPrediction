@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import pandas as pd
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -7,12 +8,10 @@ import pytorch_lightning as pl
 import torchmetrics
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import sklearn.model_selection
-import pandas as pd
-from sklearn import preprocessing
 import seaborn as sns
-import numpy
 
 from Datasets.StandardLoanLevelDataset.Parser.StandardLoanLevelDatasetParser import StandardLoanLevelDatasetParser
+import ModelUtils
 
 
 def calculate_acc(y_hat, y):
@@ -38,35 +37,28 @@ class FFNN(pl.LightningModule):
         # Random weight initialization
         for layer in self._nn:
             if type(layer) == nn.Linear:
-                torch.nn.init.xavier_normal(layer.weight)
+                torch.nn.init.xavier_normal_(layer.weight)
                 layer.bias.data.fill_(0.01)
 
     def forward(self, x):
-        return self._nn(x)
+        return torch.sigmoid_(self._nn(x))
+
+    def do_step(self, batch, log_loss, log_acc):
+        x, y = batch[:, :-1], batch[:, -1:]
+        y_hat = self._nn(x)
+        loss = F.binary_cross_entropy_with_logits(y_hat, y, pos_weight=torch.tensor(10.0))
+        self.log(log_loss, loss)
+        self.log(log_acc, calculate_acc(F.sigmoid(y_hat), y))
+        return {'loss': loss, 'y_hat': y_hat, 'y': y}
 
     def training_step(self, batch, batch_idx):
-        x, y = batch[:, :-1], batch[:, -1:]
-        y_hat = self._nn(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y, pos_weight=torch.tensor(10.0))
-        self.log('train_loss', loss)
-        self.log('train_acc', calculate_acc(F.sigmoid(y_hat), y))
-        return loss
+        return self.do_step(batch, 'train_loss', 'train_acc')['loss']
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch[:, :-1], batch[:, -1:]
-        y_hat = self._nn(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y, pos_weight=torch.tensor(10.0))
-        self.log('val_loss', loss)
-        self.log('val_acc', calculate_acc(F.sigmoid(y_hat), y))
-        return loss
+        return self.do_step(batch, 'val_loss', 'val_acc')['loss']
 
     def test_step(self, batch, batch_idx):
-        x, y = batch[:, :-1], batch[:, -1:]
-        y_hat = self._nn(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y, pos_weight=torch.tensor(10.0))
-        self.log('test_loss', loss)
-        self.log('test_acc', calculate_acc(F.sigmoid(y_hat), y))
-        return {'loss': loss, 'y_hat': y_hat, 'y': y}
+        return self.do_step(batch, 'test_loss', 'test_acc')
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=0.1, momentum=0.9)
@@ -79,22 +71,31 @@ class FFNN(pl.LightningModule):
         return [optimizer], [lr_scheduler]
 
 
-sll_data_parser = StandardLoanLevelDatasetParser(max_rows_per_quarter=250000, rows_to_sample=100000)
+sll_data_parser = StandardLoanLevelDatasetParser(max_rows_per_quarter=250000, rows_to_sample=75000)
 sll_data_parser.load()
 
-df = sll_data_parser.get_dataset()
+df = sll_data_parser.get_dataset(extra_cols=['report_month', 'zero_balance_removal_UPB'])
 #scaler = preprocessing.StandardScaler(with_mean=False)
 #df = pd.DataFrame(scaler.fit_transform(df.values), columns=df.columns, index=df.index)
 
 train, val = sklearn.model_selection.train_test_split(df, test_size=0.2)
 train, test = sklearn.model_selection.train_test_split(train, test_size=0.2)
 # train 0.6, val 0.2, test 0.2
-train_prepay = train.pop('zero_balance_code')
-train.insert(len(train.columns), 'zero_balance_code', train_prepay)
-val_prepay = val.pop('zero_balance_code')
-val.insert(len(val.columns), 'zero_balance_code', val_prepay)
-test_prepay = test.pop('zero_balance_code')
-test.insert(len(test.columns), 'zero_balance_code', test_prepay)
+
+
+def format_dataframe(df, extra_cols=None):
+    prepay = df.pop('zero_balance_code')
+    if extra_cols is not None:
+        extra_cols = df[extra_cols].copy()
+        df = df.drop(extra_cols, axis=1)
+    # Make the last column the 'zero_balance_code'
+    df.insert(len(df.columns), 'prepay', prepay)
+    return df, extra_cols
+
+
+train, _ = format_dataframe(train, extra_cols=['report_month', 'zero_balance_removal_UPB'])
+val, _ = format_dataframe(val, extra_cols=['report_month', 'zero_balance_removal_UPB'])
+test, test_cpr = format_dataframe(test, extra_cols=['report_month', 'zero_balance_removal_UPB'])
 
 train_tensor = torch.tensor(train.values)
 val_tensor = torch.tensor(val.values)
@@ -122,10 +123,17 @@ else:
     nn_model = FFNN.load_from_checkpoint("/home/john/PycharmProjects/MBSPrepaymentPrediction/Models/lightning_logs/version_7/checkpoints/epoch=16-step=1055886.ckpt", input_len=len(test.columns)-1).double()
     conf_mat = torchmetrics.ConfusionMatrix(2)
     cm = torch.zeros(2, 2)
+    pred = torch.tensor([], requires_grad=False)
+    nn_model.eval()
     for batch in test_dataloader:
         x, y = batch[:, :-1], batch[:, -1:].type(torch.int)
         y_hat = nn_model(x)
-        cm += conf_mat(torch.clamp(y_hat, 0.0, 1.0), y)
+        cm += conf_mat(y_hat, y)
+        pred = torch.cat((pred, y_hat), dim=0)
     plt.figure()
     sns.heatmap(cm.type(torch.int), annot=True, cmap='Blues', fmt='d')
     plt.show()
+
+    cpr_df = pd.concat([test, test_cpr], axis=1)
+    print(cpr_df)
+    ModelUtils.plot_cpr(cpr_df.reset_index(), pred.detach().numpy(), "FFNN_cpr.png")
