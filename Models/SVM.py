@@ -5,21 +5,24 @@ import sklearn.preprocessing
 import matplotlib.pyplot as plt
 from Datasets.StandardLoanLevelDataset.Parser.StandardLoanLevelDatasetParser import StandardLoanLevelDatasetParser
 
-
-seed = 10
-
-sll_data_parser = StandardLoanLevelDatasetParser(dump_to_csv="help.csv", max_rows_per_quarter=10000, rows_to_sample=1000, seed=seed)
+sll_data_parser = StandardLoanLevelDatasetParser(max_rows_per_quarter=10000, rows_to_sample=1000)
 sll_data_parser.load()
 
-train, test = sklearn.model_selection.train_test_split(sll_data_parser.get_dataset(), test_size=0.3)
+df = sll_data_parser.get_dataset()
+
+train, val = sklearn.model_selection.train_test_split(df, test_size=0.2)
+train, test = sklearn.model_selection.train_test_split(train, test_size=0.2)
+
 train_y = train['zero_balance_code']
 train_x = train.drop(columns='zero_balance_code')
+val_y = val['zero_balance_code']
+val_x = val.drop(columns='zero_balance_code')
 test_y = test['zero_balance_code']
 test_x = test.drop(columns='zero_balance_code')
 
 kernels = ['poly', 'rbf', 'sigmoid']
 for kernel in kernels:
-    svm = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.svm.SVC(gamma='auto', kernel=kernel))
+    svm = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.svm.SVC(kernel=kernel))
     svm.fit(train_x, train_y)
 
     predictions = svm.predict(test_x)
@@ -30,4 +33,3 @@ for kernel in kernels:
     plt.title(f'SVM with {kernel} kernel')
     plt.show()
     plt.clf()
-

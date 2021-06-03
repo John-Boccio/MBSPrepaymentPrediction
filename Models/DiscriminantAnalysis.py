@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sklearn
-from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis, LinearDiscriminantAnalysis
 
 from Datasets.StandardLoanLevelDataset.Parser.StandardLoanLevelDatasetParser import StandardLoanLevelDatasetParser
 
@@ -21,16 +21,19 @@ val_x = val.drop(columns='zero_balance_code')
 test_y = test['zero_balance_code']
 test_x = test.drop(columns='zero_balance_code')
 
-qda = QuadraticDiscriminantAnalysis()
-qda.fit(train_x, train_y)
+da = [("Linear GDA", LinearDiscriminantAnalysis()), ("Quadratic GDA", QuadraticDiscriminantAnalysis())]
+for gda in da:
+    print(gda[0])
+    gda_i = gda[1]
+    gda_i.fit(train_x, train_y)
 
-score_train = qda.score(train_x, train_y)
-print(score_train)
-score_val = qda.score(val_x, val_y)
-print(score_val)
+    score_train = gda_i.score(train_x, train_y)
+    print(score_train)
+    score_val = gda_i.score(val_x, val_y)
+    print(score_val)
 
-predictions = qda.predict(test_x)
-sklearn.metrics.plot_confusion_matrix(qda, test_x, test_y, values_format='', cmap='Blues')
-plt.show()
-classification_report = sklearn.metrics.classification_report(test_y, predictions)
-print(classification_report)
+    predictions = gda_i.predict(test_x)
+    sklearn.metrics.plot_confusion_matrix(gda_i, test_x, test_y, values_format='', cmap='Blues')
+    plt.show()
+    classification_report = sklearn.metrics.classification_report(test_y, predictions)
+    print(classification_report)

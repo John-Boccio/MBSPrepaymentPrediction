@@ -46,7 +46,7 @@ class FFNN(pl.LightningModule):
     def do_step(self, batch, log_loss, log_acc):
         x, y = batch[:, :-1], batch[:, -1:]
         y_hat = self._nn(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y, pos_weight=torch.tensor(10.0))
+        loss = F.binary_cross_entropy_with_logits(y_hat, y, pos_weight=torch.tensor(5.0))
         self.log(log_loss, loss)
         self.log(log_acc, calculate_acc(F.sigmoid(y_hat), y))
         return {'loss': loss, 'y_hat': y_hat, 'y': y}
@@ -115,25 +115,26 @@ early_stopping = EarlyStopping(
 trainer = pl.Trainer(min_epochs=20, max_epochs=150, callbacks=[early_stopping], gpus=-1)
 nn_model = FFNN(len(test.columns)-1).double()
 
-training = 0
+training = 1
 if training:
     trainer.fit(nn_model, train_dataloader, val_dataloader)
     trainer.test(test_dataloaders=[test_dataloader])
 else:
     nn_model = FFNN.load_from_checkpoint("/home/john/PycharmProjects/MBSPrepaymentPrediction/Models/lightning_logs/version_7/checkpoints/epoch=16-step=1055886.ckpt", input_len=len(test.columns)-1).double()
-    conf_mat = torchmetrics.ConfusionMatrix(2)
-    cm = torch.zeros(2, 2)
-    pred = torch.tensor([], requires_grad=False)
-    nn_model.eval()
-    for batch in test_dataloader:
-        x, y = batch[:, :-1], batch[:, -1:].type(torch.int)
-        y_hat = nn_model(x)
-        cm += conf_mat(y_hat, y)
-        pred = torch.cat((pred, y_hat), dim=0)
-    plt.figure()
-    sns.heatmap(cm.type(torch.int), annot=True, cmap='Blues', fmt='d')
-    plt.show()
 
-    cpr_df = pd.concat([test, test_cpr], axis=1)
-    print(cpr_df)
-    ModelUtils.plot_cpr(cpr_df.reset_index(), pred.detach().numpy(), "FFNN_cpr.png")
+conf_mat = torchmetrics.ConfusionMatrix(2)
+cm = torch.zeros(2, 2)
+pred = torch.tensor([], requires_grad=False)
+nn_model.eval()
+for batch in test_dataloader:
+    x, y = batch[:, :-1], batch[:, -1:].type(torch.int)
+    y_hat = nn_model(x)
+    cm += conf_mat(y_hat, y)
+    pred = torch.cat((pred, y_hat), dim=0)
+plt.figure()
+sns.heatmap(cm.type(torch.int), annot=True, cmap='Blues', fmt='d')
+plt.show()
+
+cpr_df = pd.concat([test, test_cpr], axis=1)
+print(cpr_df)
+ModelUtils.plot_cpr(cpr_df.reset_index(), pred.detach().numpy(), "Plots/FFNN_cpr.png")
